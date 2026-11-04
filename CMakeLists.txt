@@ -1,7 +1,14 @@
-cmake_minimum_required(VERSION 3.5)
-project(ros_workspace NONE)
+cmake_minimum_required(VERSION 3.10)
+project(ros_workspace_base NONE)
 
-find_package(ament_cmake_core REQUIRED)
+# Generates the same prefix level setup files and environment hooks as
+# ament_cmake does, from the copies of the ament_package templates in
+# templates/, so that neither building nor using this package needs any
+# ament package.
+
+if(WIN32)
+  message(FATAL_ERROR "ros_workspace_base supports Linux and macOS only")
+endif()
 
 # REP 159: the install prefixes of the distributions this one extends with
 # binary_import, nearest first. bloom passes them when releasing into such a
@@ -9,93 +16,125 @@ find_package(ament_cmake_core REQUIRED)
 set(ROS_WORKSPACE_PARENT_PREFIX_PATH "" CACHE STRING
   "Install prefixes of the binary_import parent distributions, nearest first")
 
-# Collect current python 3 version
-execute_process(COMMAND python3 -c "from distutils import sysconfig; print(sysconfig.get_python_version())" OUTPUT_VARIABLE PYTHON_MAJOR_MINOR OUTPUT_STRIP_TRAILING_WHITESPACE)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# default interpreter written into the prefix level local_setup files
+set(ament_package_PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
+set(PYTHON_INSTALL_DIR
+  "lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages")
 
-# Locate ament_package template files.
-if(WIN32)
-  set(PYTHON_INSTALL_DIR "lib/site-packages")
-  set(SHELL_EXT "bat")
+# enable C language so that a trycompile can determine what the
+# anticipated libdir will be.
+enable_language(C)
+include(GNUInstallDirs)
+
+set(templates "${CMAKE_CURRENT_SOURCE_DIR}/templates")
+set(gen "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(share "share/${PROJECT_NAME}")
+
+# Copy a file into the build tree, expanding it when it ends in .in, and
+# return the path of the result in dest_var.
+function(_stage_file src dest_dir dest_var)
+  get_filename_component(name "${src}" NAME)
+  if(name MATCHES "^(.*)\\.in$")
+    set(name "${CMAKE_MATCH_1}")
+    configure_file("${src}" "${dest_dir}/${name}" @ONLY)
+  else()
+    configure_file("${src}" "${dest_dir}/${name}" COPYONLY)
+  endif()
+  set(${dest_var} "${dest_dir}/${name}" PARENT_SCOPE)
+endfunction()
+
+# --- environment hooks for the whole prefix
+# Each entry is name|template|dsv type|variable|value.
+if(APPLE)
+  set(LIBRARY_PATH_ENV_VAR "DYLD_LIBRARY_PATH")
 else()
-  set(PYTHON_INSTALL_DIR "lib/python${PYTHON_MAJOR_MINOR}/site-packages")
-  set(SHELL_EXT "sh")
+  set(LIBRARY_PATH_ENV_VAR "LD_LIBRARY_PATH")
 endif()
-# Look in this prefix first, then, for a binary_import child, in the
-# prefixes of its parents.
-set(AMENT_PACKAGE_DIR "")
-set(_searched "")
-foreach(_prefix "${CMAKE_INSTALL_PREFIX}" ${ROS_WORKSPACE_PARENT_PREFIX_PATH})
-  set(_dir "${_prefix}/${PYTHON_INSTALL_DIR}/ament_package")
-  list(APPEND _searched "${_dir}")
-  if(EXISTS "${_dir}")
-    set(AMENT_PACKAGE_DIR "${_dir}")
-    break()
-  endif()
-  # Check for an .egg-link file and use the listed directory if it exists
-  get_filename_component(_egg_link "${_dir}" DIRECTORY)
-  set(_egg_link "${_egg_link}/ament-package.egg-link")
-  list(APPEND _searched "${_egg_link}")
-  if(EXISTS "${_egg_link}")
-    file(STRINGS "${_egg_link}" _egg_dir)
-    list(GET _egg_dir 0 _egg_dir)
-    set(AMENT_PACKAGE_DIR "${_egg_dir}/ament_package")
-    if(NOT EXISTS "${AMENT_PACKAGE_DIR}")
-      message(FATAL_ERROR "Could not find '${AMENT_PACKAGE_DIR}' listed in '${_egg_link}'")
-    endif()
-    break()
-  endif()
+set(hooks
+  "library_path|${templates}/environment_hook/library_path.sh|prepend-non-duplicate|${LIBRARY_PATH_ENV_VAR}|lib"
+  "path|${templates}/environment_hook/path.sh|prepend-non-duplicate-if-exists|PATH|bin"
+  "pythonpath|${templates}/environment_hook/pythonpath.sh.in|prepend-non-duplicate|PYTHONPATH|${PYTHON_INSTALL_DIR}")
+if(NOT CMAKE_INSTALL_LIBDIR STREQUAL "lib")
+  list(APPEND hooks
+    "multiarch_library_paths|${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/multiarch_library_paths.sh.in|prepend-non-duplicate|${LIBRARY_PATH_ENV_VAR}|${CMAKE_INSTALL_LIBDIR}")
+endif()
+
+set(hook_paths "")
+foreach(hook ${hooks})
+  string(REPLACE "|" ";" hook "${hook}")
+  list(GET hook 0 name)
+  list(GET hook 1 src)
+  list(SUBLIST hook 2 3 dsv)
+  list(JOIN dsv ";" dsv)
+  _stage_file("${src}" "${gen}/environment" staged)
+  file(WRITE "${gen}/environment/${name}.dsv" "${dsv}\n")
+  install(FILES "${staged}" "${gen}/environment/${name}.dsv"
+    DESTINATION "${share}/environment")
+  list(APPEND hook_paths "${share}/environment/${name}.sh")
 endforeach()
-if(NOT AMENT_PACKAGE_DIR)
-  string(REPLACE ";" "', '" _searched "${_searched}")
-  message(FATAL_ERROR "Could not find ament_package in any of: '${_searched}'")
-endif()
-set(AMENT_PACKAGE_TEMPLATE_DIR "${AMENT_PACKAGE_DIR}/template")
-set(PYTHONPATH_HOOK "${AMENT_PACKAGE_TEMPLATE_DIR}/environment_hook/pythonpath.${SHELL_EXT}.in")
+list(SORT hook_paths)
 
-# register information for .dsv generation
-set(
-  AMENT_CMAKE_ENVIRONMENT_HOOKS_DESC_pythonpath
-  "prepend-non-duplicate;PYTHONPATH;${PYTHON_INSTALL_DIR}")
-
-# Set environment hooks for default environment.
-if(WIN32)
-  ament_environment_hooks("${PYTHONPATH_HOOK}")
-else()
-  set(LIBRARY_PATH_HOOK "${AMENT_PACKAGE_TEMPLATE_DIR}/environment_hook/library_path.${SHELL_EXT}")
-  # enable C language so that a trycompile can determine what the
-  # anticipated libdir will be.
-  enable_language(C)
-  include(GNUInstallDirs)
-  if(NOT ${CMAKE_INSTALL_LIBDIR} STREQUAL "lib")
-    # register multiarch information for .dsv generation
-    if(APPLE)
-      set(LIBRARY_PATH_ENV_VAR "DYLD_LIBRARY_PATH")
-    else()
-      set(LIBRARY_PATH_ENV_VAR "LD_LIBRARY_PATH")
-    endif()
-    set(
-      AMENT_CMAKE_ENVIRONMENT_HOOKS_DESC_multiarch_library_paths
-      "prepend-non-duplicate;${LIBRARY_PATH_ENV_VAR};${CMAKE_INSTALL_LIBDIR}")
-    set(MULTIARCH_LIBRARY_PATH_HOOK "env-hooks/multiarch_library_paths.sh.in")
+# --- package level local_setup files and their dsv files
+set(local_setup_dsv "")
+set(sh_hooks "")
+foreach(hook ${hook_paths})
+  string(APPEND local_setup_dsv "source;${hook}\n")
+  string(APPEND sh_hooks
+    "ament_append_value AMENT_ENVIRONMENT_HOOKS \"$AMENT_CURRENT_PREFIX/${hook}\"\n")
+endforeach()
+set(extensions bash fish sh zsh)
+foreach(ext ${extensions})
+  # the hooks are shell scripts, so only the sh file sources them
+  if(ext STREQUAL "sh")
+    set(ENVIRONMENT_HOOKS "${sh_hooks}")
+  else()
+    set(ENVIRONMENT_HOOKS "")
   endif()
-  ament_environment_hooks("${LIBRARY_PATH_HOOK}" "${PYTHONPATH_HOOK}" ${MULTIARCH_LIBRARY_PATH_HOOK})
-endif()
+  _stage_file("${templates}/package_level/local_setup.${ext}.in" "${gen}/package" staged)
+  install(FILES "${staged}" DESTINATION "${share}")
+endforeach()
+file(WRITE "${gen}/package/local_setup.dsv" "${local_setup_dsv}")
+list(APPEND extensions dsv)
+list(SORT extensions)
+set(package_dsv "")
+foreach(ext ${extensions})
+  string(APPEND package_dsv "source;${share}/local_setup.${ext}\n")
+endforeach()
+file(WRITE "${gen}/package/package.dsv" "${package_dsv}")
+install(FILES
+  "${gen}/package/local_setup.dsv"
+  "${gen}/package/package.dsv"
+  package.xml
+  DESTINATION "${share}")
 
+# --- resource index entries read by the prefix level setup files
 if(ROS_WORKSPACE_PARENT_PREFIX_PATH)
   # REP 159: record the parents as this package's parent_prefix_path
-  # resource, which the prefix-level setup files read to source each
-  # parent's local_setup first. ament_cmake's package hook writes
-  # $ENV{AMENT_PREFIX_PATH} into that resource when ament_package() runs,
-  # so set it to exactly the parents, whatever the build environment holds.
-  string(REPLACE ";" ":" _parent_prefix_path "${ROS_WORKSPACE_PARENT_PREFIX_PATH}")
-  set(ENV{AMENT_PREFIX_PATH} "${_parent_prefix_path}")
+  # resource, which the prefix level setup files read to source each
+  # parent's local_setup first.
+  string(REPLACE ";" ":" parent_prefix_path "${ROS_WORKSPACE_PARENT_PREFIX_PATH}")
   set(SKIP_PARENT_PREFIX_PATH "")
 else()
+  set(parent_prefix_path "")
   # skip using ament_index/resource_index/parent_prefix_path
   # if for Debian packages it is known that there are no underlays
   # note the template only checks for an empty (use) / non-empty (skip) string
   set(SKIP_PARENT_PREFIX_PATH "SKIP_PARENT_PREFIX_PATH")
 endif()
+set(index "share/ament_index/resource_index")
+file(WRITE "${gen}/index/packages/${PROJECT_NAME}" "")
+file(WRITE "${gen}/index/package_run_dependencies/${PROJECT_NAME}" "")
+file(WRITE "${gen}/index/parent_prefix_path/${PROJECT_NAME}" "${parent_prefix_path}")
+foreach(resource packages package_run_dependencies parent_prefix_path)
+  install(FILES "${gen}/index/${resource}/${PROJECT_NAME}"
+    DESTINATION "${index}/${resource}")
+endforeach()
 
-ament_package()
-ament_generate_environment()
+# --- setup files in the root of the install prefix
+foreach(name
+    local_setup.bash local_setup.fish.in local_setup.sh.in _local_setup_util.py
+    local_setup.zsh setup.bash setup.fish setup.sh.in setup.zsh)
+  _stage_file("${templates}/prefix_level/${name}" "${gen}/prefix" staged)
+  install(FILES "${staged}" DESTINATION .)
+endforeach()
