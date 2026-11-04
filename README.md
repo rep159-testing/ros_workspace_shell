@@ -29,11 +29,23 @@ package.
 
 ## Templates
 
-`templates/` holds unmodified copies of the ament_package 0.18.3 templates
-and of the `path` hook of ament_cmake_core 2.8.8, from their `lyrical`
-branches. The files this package generates from them are identical to the
-ones ament_cmake generates for `ros_workspace` 1.0.4, apart from the package
-name. To update them, copy the new versions over these.
+`templates/` holds unmodified copies of these upstream files, without the
+Windows `.bat` templates:
+
+| Files in `templates/` | Copied from | Version |
+|---|---|---|
+| `prefix_level/*`, `package_level/*`, `environment_hook/library_path.sh`, `environment_hook/pythonpath.sh.in` | [ament/ament_package](https://github.com/ament/ament_package), `ament_package/template/` | tag `0.18.3`, commit `98089783110f7606a90e8ef9786719c3d0cd32f9` |
+| `environment_hook/path.sh` | [ament/ament_cmake](https://github.com/ament/ament_cmake), `ament_cmake_core/cmake/environment_hooks/environment/path.sh` | tag `2.8.8`, commit `46a63275c1c2ff2383f32d0c378784aafd70e6e2` |
+
+The `path` hook comes from ament_cmake_core and not from ament_package,
+which has a different `path.sh`: ament_cmake installs the ament_cmake_core
+one as the default `path` hook of every package, so `ros_workspace`
+installed that one.
+
+The files this package generates from them are identical to the ones
+ament_cmake generates for `ros_workspace` 1.0.4, apart from the package
+name. To update them, copy the new versions over these and update the
+table.
 
 ## Parent distributions (REP 159)
 
