@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
 project(ros_workspace_shell NONE)
 
-# Generates the same prefix level setup files and environment hooks as
-# ament_cmake does, from the copies of the ament_package templates in
-# templates/, so that neither building nor using this package needs any
-# ament package.
+# Generates the same setup files in the root of the install prefix as
+# ament_cmake does, from the copies of the ament_package prefix level
+# templates in templates/, and the environment of the prefix as a dsv file
+# that those setup files read, so that neither building nor using this
+# package needs any ament package.
 
 if(WIN32)
   message(FATAL_ERROR "ros_workspace_shell supports Linux and macOS only")
@@ -44,69 +45,29 @@ function(_stage_file src dest_dir dest_var)
   set(${dest_var} "${dest_dir}/${name}" PARENT_SCOPE)
 endfunction()
 
-# --- environment hooks for the whole prefix
-# Each entry is name|template|dsv type|variable|value.
+# --- environment of the prefix
+# The setup files run _local_setup_util.py, which reads
+# share/<package>/package.dsv for every package of the prefix and applies
+# its lines. ament packages list shell scripts there, each with a dsv file
+# next to it, and package level local_setup scripts; the setup files only
+# read the dsv files, so this package writes the lines directly, in the
+# order ament_cmake sources its hooks.
 if(APPLE)
   set(LIBRARY_PATH_ENV_VAR "DYLD_LIBRARY_PATH")
 else()
   set(LIBRARY_PATH_ENV_VAR "LD_LIBRARY_PATH")
 endif()
-set(hooks
-  "library_path|${templates}/environment_hook/library_path.sh|prepend-non-duplicate|${LIBRARY_PATH_ENV_VAR}|lib"
-  "path|${templates}/environment_hook/path.sh|prepend-non-duplicate-if-exists|PATH|bin"
-  "pythonpath|${templates}/environment_hook/pythonpath.sh.in|prepend-non-duplicate|PYTHONPATH|${PYTHON_INSTALL_DIR}")
+set(package_dsv "prepend-non-duplicate;${LIBRARY_PATH_ENV_VAR};lib\n")
 if(NOT CMAKE_INSTALL_LIBDIR STREQUAL "lib")
-  list(APPEND hooks
-    "multiarch_library_paths|${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/multiarch_library_paths.sh.in|prepend-non-duplicate|${LIBRARY_PATH_ENV_VAR}|${CMAKE_INSTALL_LIBDIR}")
+  # multiarch library directory, prepended after lib so that it comes first
+  string(APPEND package_dsv
+    "prepend-non-duplicate;${LIBRARY_PATH_ENV_VAR};${CMAKE_INSTALL_LIBDIR}\n")
 endif()
-
-set(hook_paths "")
-foreach(hook ${hooks})
-  string(REPLACE "|" ";" hook "${hook}")
-  list(GET hook 0 name)
-  list(GET hook 1 src)
-  list(SUBLIST hook 2 3 dsv)
-  list(JOIN dsv ";" dsv)
-  _stage_file("${src}" "${gen}/environment" staged)
-  file(WRITE "${gen}/environment/${name}.dsv" "${dsv}\n")
-  install(FILES "${staged}" "${gen}/environment/${name}.dsv"
-    DESTINATION "${share}/environment")
-  list(APPEND hook_paths "${share}/environment/${name}.sh")
-endforeach()
-list(SORT hook_paths)
-
-# --- package level local_setup files and their dsv files
-set(local_setup_dsv "")
-set(sh_hooks "")
-foreach(hook ${hook_paths})
-  string(APPEND local_setup_dsv "source;${hook}\n")
-  string(APPEND sh_hooks
-    "ament_append_value AMENT_ENVIRONMENT_HOOKS \"$AMENT_CURRENT_PREFIX/${hook}\"\n")
-endforeach()
-set(extensions bash fish sh zsh)
-foreach(ext ${extensions})
-  # the hooks are shell scripts, so only the sh file sources them
-  if(ext STREQUAL "sh")
-    set(ENVIRONMENT_HOOKS "${sh_hooks}")
-  else()
-    set(ENVIRONMENT_HOOKS "")
-  endif()
-  _stage_file("${templates}/package_level/local_setup.${ext}.in" "${gen}/package" staged)
-  install(FILES "${staged}" DESTINATION "${share}")
-endforeach()
-file(WRITE "${gen}/package/local_setup.dsv" "${local_setup_dsv}")
-list(APPEND extensions dsv)
-list(SORT extensions)
-set(package_dsv "")
-foreach(ext ${extensions})
-  string(APPEND package_dsv "source;${share}/local_setup.${ext}\n")
-endforeach()
-file(WRITE "${gen}/package/package.dsv" "${package_dsv}")
-install(FILES
-  "${gen}/package/local_setup.dsv"
-  "${gen}/package/package.dsv"
-  package.xml
-  DESTINATION "${share}")
+string(APPEND package_dsv
+  "prepend-non-duplicate-if-exists;PATH;bin\n"
+  "prepend-non-duplicate;PYTHONPATH;${PYTHON_INSTALL_DIR}\n")
+file(WRITE "${gen}/package.dsv" "${package_dsv}")
+install(FILES "${gen}/package.dsv" package.xml DESTINATION "${share}")
 
 # --- resource index entries read by the prefix level setup files
 if(ROS_WORKSPACE_PARENT_PREFIX_PATH)
