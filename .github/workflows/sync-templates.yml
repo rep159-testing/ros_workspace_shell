@@ -1,0 +1,62 @@
+# Keeps templates/prefix_level/ equal to the prefix level templates of the
+# latest ament_package release on UPSTREAM_BRANCH, and the README table that
+# names that release. When they differ, it opens a pull request, or updates
+# the one already open.
+name: Sync templates
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+env:
+  UPSTREAM_BRANCH: lyrical
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ament/ament_package
+          ref: ${{ env.UPSTREAM_BRANCH }}
+          fetch-depth: 0
+          path: upstream
+
+      - name: Copy the templates of the latest release
+        id: copy
+        run: |
+          tag=$(git -C upstream describe --tags --abbrev=0)
+          sha=$(git -C upstream rev-parse "$tag^{commit}")
+          old=$(grep -oE "commit \`[0-9a-f]{40}\`" README.md | grep -oE '[0-9a-f]{40}')
+          git -C upstream checkout -q "$sha"
+          rsync -a --delete --exclude '*.bat.in' --exclude __init__.py \
+            upstream/ament_package/template/prefix_level/ templates/prefix_level/
+          sed -i -E "s/tag \`[^\`]+\`, commit \`[0-9a-f]{40}\`/tag \`$tag\`, commit \`$sha\`/" README.md
+          grep -q "commit \`$sha\`" README.md
+          {
+            echo "tag=$tag"
+            echo "sha=$sha"
+            echo "old=$old"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8.1.1
+        with:
+          add-paths: |
+            templates/prefix_level
+            README.md
+          branch: sync-templates
+          signoff: true
+          commit-message: Copy the prefix level templates of ament_package ${{ steps.copy.outputs.tag }}
+          title: Copy the prefix level templates of ament_package ${{ steps.copy.outputs.tag }}
+          body: |
+            Copies `ament_package/template/prefix_level/` of [ament_package](https://github.com/ament/ament_package) ${{ steps.copy.outputs.tag }}, the latest release on `${{ env.UPSTREAM_BRANCH }}`, into `templates/prefix_level/`, without the Windows `.bat.in` templates and `__init__.py`.
+
+            Upstream changes: https://github.com/ament/ament_package/compare/${{ steps.copy.outputs.old }}...${{ steps.copy.outputs.sha }}
+
+            Check the new templates for placeholders that `CMakeLists.txt` does not set: `configure_file` replaces them with empty strings without an error.
