@@ -93,9 +93,11 @@ foreach(resource packages package_run_dependencies parent_prefix_path)
 endforeach()
 
 # --- setup files in the root of the install prefix
-foreach(name
-    local_setup.bash local_setup.fish.in local_setup.sh.in _local_setup_util.py
-    local_setup.zsh setup.bash setup.fish setup.sh.in setup.zsh)
+# Every file in templates/prefix_level, so that a template added upstream is
+# installed as soon as the sync workflow copies it.
+file(GLOB names RELATIVE "${templates}/prefix_level" "${templates}/prefix_level/*")
+list(SORT names)
+foreach(name ${names})
   _stage_file("${templates}/prefix_level/${name}" "${gen}/prefix" staged)
   install(FILES "${staged}" DESTINATION .)
 endforeach()
