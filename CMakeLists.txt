@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(ros_workspace_base NONE)
+project(ros_workspace_shell NONE)
 
 # Generates the same prefix level setup files and environment hooks as
 # ament_cmake does, from the copies of the ament_package templates in
@@ -7,7 +7,7 @@ project(ros_workspace_base NONE)
 # ament package.
 
 if(WIN32)
-  message(FATAL_ERROR "ros_workspace_base supports Linux and macOS only")
+  message(FATAL_ERROR "ros_workspace_shell supports Linux and macOS only")
 endif()
 
 # REP 159: the install prefixes of the distributions this one extends with

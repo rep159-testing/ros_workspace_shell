@@ -1,4 +1,4 @@
-# ros_workspace_base
+# ros_workspace_shell
 
 The setup files in the root of a ROS 2 install prefix (`setup.bash`,
 `local_setup.sh` and the others) and the environment hooks for the whole
@@ -15,9 +15,9 @@ needs, for example a Gazebo distribution that ROS distributions extend
 | Where | Files |
 |---|---|
 | root of the prefix | `setup.{sh,bash,zsh,fish}`, `local_setup.{sh,bash,zsh,fish}`, `_local_setup_util.py` |
-| `share/ros_workspace_base/environment/` | `library_path`, `path`, `pythonpath` and, when the library directory is a multiarch one, `multiarch_library_paths`, each as `.sh` and `.dsv` |
-| `share/ros_workspace_base/` | `local_setup.{sh,bash,zsh,fish,dsv}`, `package.dsv`, `package.xml` |
-| `share/ament_index/resource_index/` | `packages`, `package_run_dependencies` and `parent_prefix_path` entries for `ros_workspace_base` |
+| `share/ros_workspace_shell/environment/` | `library_path`, `path`, `pythonpath` and, when the library directory is a multiarch one, `multiarch_library_paths`, each as `.sh` and `.dsv` |
+| `share/ros_workspace_shell/` | `local_setup.{sh,bash,zsh,fish,dsv}`, `package.dsv`, `package.xml` |
+| `share/ament_index/resource_index/` | `packages`, `package_run_dependencies` and `parent_prefix_path` entries for `ros_workspace_shell` |
 
 The resource index entries are plain files that the setup files read to
 find the packages of the prefix; writing them needs no ament code.
