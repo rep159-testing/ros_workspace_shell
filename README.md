@@ -52,8 +52,15 @@ ament_package, without the Windows `.bat` templates:
 | `prefix_level/*` | [ament/ament_package](https://github.com/ament/ament_package), `ament_package/template/prefix_level/` | tag `0.18.3`, commit `98089783110f7606a90e8ef9786719c3d0cd32f9` |
 
 The setup files this package generates from them are identical to the ones
-ament_cmake generates for `ros_workspace` 1.0.4. To update them, copy the
-new versions over these and update the table.
+ament_cmake generates for `ros_workspace` 1.0.4.
+
+Every Monday the Sync templates workflow
+(`.github/workflows/sync-templates.yml`) copies the templates of the latest
+ament_package release on the `lyrical` branch over these, updates the table
+and, when anything changed, opens a pull request. It can also be started by
+hand from the Actions tab. Every file in `templates/prefix_level/` is
+installed, so a template added upstream needs no change in `CMakeLists.txt`
+unless it uses a new placeholder.
 
 ## Parent distributions (REP 159)
 
