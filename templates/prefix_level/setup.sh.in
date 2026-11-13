@@ -132,6 +132,7 @@ for _path in $_UNIQUE_PREFIX_PATH; do
     # restore IFS before sourcing other files
     IFS=$_prefix_setup_IFS
     . "$_path/local_setup.$AMENT_SHELL"
+    unset AMENT_CURRENT_PREFIX
     # restore AMENT_SHELL after each prefix-level local_setup file
     AMENT_SHELL=$_prefix_setup_AMENT_SHELL
   fi
