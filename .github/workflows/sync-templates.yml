@@ -5,6 +5,8 @@
 name: Sync templates
 
 on:
+  push:  # TEST ONLY, remove
+    branches: [test/sync-templates-run]
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
