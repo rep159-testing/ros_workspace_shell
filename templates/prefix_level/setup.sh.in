@@ -142,4 +142,3 @@ unset _prefix_setup_IFS
 unset _prefix_setup_AMENT_SHELL
 unset _UNIQUE_PREFIX_PATH
 unset AMENT_SHELL
-# TEST ONLY: the sync must remove this line
