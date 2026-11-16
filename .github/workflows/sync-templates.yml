@@ -45,18 +45,48 @@ jobs:
             echo "old=$old"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8.1.1
-        with:
-          add-paths: |
-            templates/prefix_level
-            README.md
-          branch: sync-templates
-          signoff: true
-          commit-message: Copy the prefix level templates of ament_package ${{ steps.copy.outputs.tag }}
-          title: Copy the prefix level templates of ament_package ${{ steps.copy.outputs.tag }}
-          body: |
-            Copies `ament_package/template/prefix_level/` of [ament_package](https://github.com/ament/ament_package) ${{ steps.copy.outputs.tag }}, the latest release on `${{ env.UPSTREAM_BRANCH }}`, into `templates/prefix_level/`, without the Windows `.bat.in` templates and `__init__.py`.
+      # Commits on BRANCH, on top of the branch the workflow ran on, and opens
+      # the pull request with the GitHub CLI, both with GITHUB_TOKEN.
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.ref_name }}
+          BRANCH: sync-templates
+          TAG: ${{ steps.copy.outputs.tag }}
+          SHA: ${{ steps.copy.outputs.sha }}
+          OLD: ${{ steps.copy.outputs.old }}
+        run: |
+          git add -A templates/prefix_level README.md
+          if git diff --cached --quiet; then
+            echo "templates/prefix_level already matches ament_package $TAG"
+            exit 0
+          fi
+          title="Copy the prefix level templates of ament_package $TAG"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -q -c "$BRANCH"
+          git commit -q -s -m "$title"
+          # Push only when the files differ from the branch already pushed, so
+          # that an open pull request keeps its commit when nothing changed.
+          if git fetch -q --depth 1 origin "$BRANCH" 2>/dev/null &&
+             git diff --quiet FETCH_HEAD HEAD; then
+            echo "origin/$BRANCH already has these files"
+          else
+            git push -f origin "$BRANCH"
+          fi
+          cat > "$RUNNER_TEMP/body.md" <<EOF
+          Copies \`ament_package/template/prefix_level/\` of [ament_package](https://github.com/ament/ament_package) $TAG, the latest release on \`$UPSTREAM_BRANCH\`, into \`templates/prefix_level/\`, without the Windows \`.bat.in\` templates and \`__init__.py\`.
 
-            Upstream changes: https://github.com/ament/ament_package/compare/${{ steps.copy.outputs.old }}...${{ steps.copy.outputs.sha }}
+          Upstream changes: https://github.com/ament/ament_package/compare/$OLD...$SHA
 
-            Check the new templates for placeholders that `CMakeLists.txt` does not set: `configure_file` replaces them with empty strings without an error.
+          Check the new templates for placeholders that \`CMakeLists.txt\` does not set: \`configure_file\` replaces them with empty strings without an error.
+          EOF
+          pr=$(gh pr list --head "$BRANCH" --base "$BASE" --state open \
+            --json number --jq '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --head "$BRANCH" --base "$BASE" --title "$title" \
+              --body-file "$RUNNER_TEMP/body.md"
+          fi
