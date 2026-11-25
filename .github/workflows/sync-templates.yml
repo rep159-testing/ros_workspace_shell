@@ -1,0 +1,92 @@
+# Keeps templates/prefix_level/ equal to the prefix level templates of the
+# latest ament_package release on UPSTREAM_BRANCH, and the README table that
+# names that release. When they differ, it opens a pull request, or updates
+# the one already open.
+name: Sync templates
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+env:
+  UPSTREAM_BRANCH: lyrical
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ament/ament_package
+          ref: ${{ env.UPSTREAM_BRANCH }}
+          fetch-depth: 0
+          path: upstream
+
+      - name: Copy the templates of the latest release
+        id: copy
+        run: |
+          tag=$(git -C upstream describe --tags --abbrev=0)
+          sha=$(git -C upstream rev-parse "$tag^{commit}")
+          old=$(grep -oE "commit \`[0-9a-f]{40}\`" README.md | grep -oE '[0-9a-f]{40}')
+          git -C upstream checkout -q "$sha"
+          rsync -a --delete --exclude '*.bat.in' --exclude __init__.py \
+            upstream/ament_package/template/prefix_level/ templates/prefix_level/
+          sed -i -E "s/tag \`[^\`]+\`, commit \`[0-9a-f]{40}\`/tag \`$tag\`, commit \`$sha\`/" README.md
+          grep -q "commit \`$sha\`" README.md
+          {
+            echo "tag=$tag"
+            echo "sha=$sha"
+            echo "old=$old"
+          } >> "$GITHUB_OUTPUT"
+
+      # Commits on BRANCH, on top of the branch the workflow ran on, and opens
+      # the pull request with the GitHub CLI, both with GITHUB_TOKEN.
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.ref_name }}
+          BRANCH: sync-templates
+          TAG: ${{ steps.copy.outputs.tag }}
+          SHA: ${{ steps.copy.outputs.sha }}
+          OLD: ${{ steps.copy.outputs.old }}
+        run: |
+          git add -A templates/prefix_level README.md
+          if git diff --cached --quiet; then
+            echo "templates/prefix_level already matches ament_package $TAG"
+            exit 0
+          fi
+          title="Copy the prefix level templates of ament_package $TAG"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -q -c "$BRANCH"
+          git commit -q -s -m "$title"
+          # Push only when the files differ from the branch already pushed, so
+          # that an open pull request keeps its commit when nothing changed.
+          if git fetch -q --depth 1 origin "$BRANCH" 2>/dev/null &&
+             git diff --quiet FETCH_HEAD HEAD; then
+            echo "origin/$BRANCH already has these files"
+          else
+            git push -f origin "$BRANCH"
+          fi
+          cat > "$RUNNER_TEMP/body.md" <<EOF
+          Copies \`ament_package/template/prefix_level/\` of [ament_package](https://github.com/ament/ament_package) $TAG, the latest release on \`$UPSTREAM_BRANCH\`, into \`templates/prefix_level/\`, without the Windows \`.bat.in\` templates and \`__init__.py\`.
+
+          Upstream changes: https://github.com/ament/ament_package/compare/$OLD...$SHA
+
+          Check the new templates for placeholders that \`CMakeLists.txt\` does not set: \`configure_file\` replaces them with empty strings without an error.
+          EOF
+          pr=$(gh pr list --head "$BRANCH" --base "$BASE" --state open \
+            --json number --jq '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --head "$BRANCH" --base "$BASE" --title "$title" \
+              --body-file "$RUNNER_TEMP/body.md"
+          fi
